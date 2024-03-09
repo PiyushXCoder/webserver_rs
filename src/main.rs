@@ -1,15 +1,18 @@
-use async_std::net::SocketAddr;
-
 mod server;
 
+use async_std::{io, net::SocketAddr};
+use server::ServerBuilder;
+
 #[async_std::main]
-async fn main() {
-    let server = server::Server::new("0.0.0.0:8000").await.unwrap();
-    server.clone().add_route("/hello", hello);
-    server.clone().add_route("/bolo", bolo);
-    server.clone().add_route("/ip", ip);
-    server.clone().add_route("/", index);
-    server.clone().run().await;
+async fn main() -> io::Result<()> {
+    ServerBuilder::new("0.0.0.0:8000")
+        .add_route("/", index)
+        .add_route("/hello", hello)
+        .add_route("/bolo", bolo)
+        .add_route("/ip", ip)
+        .build()
+        .listen()
+        .await
 }
 
 async fn index(_: SocketAddr) -> String {

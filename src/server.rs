@@ -7,46 +7,64 @@ use async_std::{
     sync::Arc,
 };
 
-use arc_swap::ArcSwap;
-
 type ResponderFn = Arc<dyn Fn(SocketAddr) -> Pin<Box<dyn Future<Output = String> + 'static>>>;
 
-#[allow(dead_code)]
+pub(crate) struct ServerBuilder<A>
+where
+    A: ToSocketAddrs + ToString + 'static,
+{
+    routers: HashMap<Arc<str>, ResponderFn>,
+    addr: A,
+}
+
+impl<A> ServerBuilder<A>
+where
+    A: ToSocketAddrs + ToString + 'static,
+{
+    pub(crate) fn new(addr: A) -> Self {
+        Self {
+            routers: HashMap::new(),
+            addr,
+        }
+    }
+
+    pub(crate) fn add_route<R: Future<Output = String> + 'static>(
+        mut self,
+        route: &str,
+        callback: fn(addr: SocketAddr) -> R,
+    ) -> Self {
+        self.routers
+            .insert(route.into(), Arc::new(move |a| Box::pin(callback(a))));
+        self
+    }
+
+    pub(crate) fn build(self) -> Arc<Server<A>> {
+        Server::new(self.addr, self.routers)
+    }
+}
+
 pub(crate) struct Server<A>
 where
     A: ToSocketAddrs + ToString + 'static,
 {
-    tcp_listener: TcpListener,
-    routes: ArcSwap<HashMap<Arc<str>, ResponderFn>>,
-    addr: A,
+    routes: HashMap<Arc<str>, ResponderFn>,
+    _addr: A,
 }
 
 impl<A> Server<A>
 where
     A: ToSocketAddrs + ToString + 'static,
 {
-    pub(crate) async fn new(addr: A) -> std::io::Result<Arc<Self>> {
-        let tcp_listener = TcpListener::bind(&addr).await?;
-        Ok(Arc::new(Self {
-            tcp_listener,
-            routes: ArcSwap::new(Arc::new(HashMap::<Arc<str>, ResponderFn>::new())),
-            addr,
-        }))
+    pub(crate) fn new(addr: A, routes: HashMap<Arc<str>, ResponderFn>) -> Arc<Self> {
+        Arc::new(Self {
+            routes,
+            _addr: addr,
+        })
     }
 
-    pub(crate) fn add_route<R: Future<Output = String> + 'static>(
-        self: Arc<Self>,
-        route: &str,
-        callback: fn(addr: SocketAddr) -> R,
-    ) {
-        let mut tmp = (*self.routes.load().clone()).clone();
-        tmp.insert(route.into(), Arc::new(move |a| Box::pin(callback(a))));
-        self.routes.swap(Arc::new(tmp));
-    }
-
-    pub(crate) async fn run(self: Arc<Self>) {
+    pub(crate) async fn listen(self: Arc<Self>) -> std::io::Result<()> {
+        let tcp_listener = TcpListener::bind(&self._addr).await?;
         loop {
-            let tcp_listener = &self.tcp_listener;
             let (stream, addr) = tcp_listener.accept().await.unwrap();
 
             async_std::task::spawn_local(Arc::clone(&self).responder(stream, addr));
@@ -66,7 +84,7 @@ where
         let uri = parts[1];
 
         println!("{}, {}", method, uri).await;
-        let (method, msg) = match self.routes.load().get(uri) {
+        let (method, msg) = match self.routes.get(uri) {
             Some(f) => ("200 OK", f(addr).await),
             None => ("404 NOT FOUND", "NOT FOUND".to_string()),
         };
