@@ -3,6 +3,12 @@
 version = 3
 
 [[package]]
+name = "arc-swap"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b3d0060af21e8d11a926981cc00c6c1541aa91dd64b9f881985c3da1094425f"
+
+[[package]]
 name = "async-attributes"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -756,6 +762,7 @@ dependencies = [
 name = "webserver_rs"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "async-std",
 ]
 

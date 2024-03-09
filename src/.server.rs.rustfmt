@@ -1,0 +1,59 @@
+use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc};
+
+use async_std::{
+    io::WriteExt,
+    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
+    task::spawn_local,
+};
+
+#[allow(dead_code)]
+pub(crate) struct Server<A>
+where
+    A: ToSocketAddrs + 'static,
+{
+    tcp_listener: TcpListener,
+    routes: HashMap<
+        Arc<str>,
+        Arc<fn(stream: TcpStream, addr: SocketAddr) -> Pin<Box<dyn Future<Output = String>>>>,
+    >,
+    addr: A,
+}
+
+impl<A> Server<A>
+where
+    A: ToSocketAddrs + 'static,
+{
+    pub(crate) async fn new(addr: A) -> std::io::Result<Arc<Self>> {
+        let tcp_listener = TcpListener::bind(&addr).await?;
+        Ok(Arc::new(Self {
+            tcp_listener,
+            routes: HashMap::new(),
+            addr,
+        }))
+    }
+
+    pub(crate) async fn run(self: Arc<Self>) {
+        loop {
+            let tcp_listener = &self.tcp_listener;
+            let (stream, addr) = tcp_listener.accept().await.unwrap();
+            Arc::clone(&self).responder(stream, addr).await;
+        }
+    }
+
+    pub(crate) async fn responder(self: Arc<Self>, mut stream: TcpStream, addr: SocketAddr) {
+        let msg = "This is yet a demo server in rust using Async!";
+
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                    msg.len(),
+                    msg
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+    }
+}
