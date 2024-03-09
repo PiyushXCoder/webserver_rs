@@ -66,15 +66,16 @@ where
         let uri = parts[1];
 
         println!("{}, {}", method, uri).await;
-        let msg = match self.routes.load().get(uri) {
-            Some(f) => f(addr).await,
-            None => "".to_string(),
+        let (method, msg) = match self.routes.load().get(uri) {
+            Some(f) => ("200 OK", f(addr).await),
+            None => ("404 NOT FOUND", "NOT FOUND".to_string()),
         };
 
         stream
             .write_all(
                 format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                    "HTTP/1.1 {}\r\nContent-Length: {}\r\n\r\n{}",
+                    method,
                     msg.len(),
                     msg
                 )
