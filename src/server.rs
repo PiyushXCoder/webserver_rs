@@ -7,13 +7,14 @@ use async_std::{
     sync::Arc,
 };
 
-type ResponderFn = Arc<dyn Fn(SocketAddr) -> Pin<Box<dyn Future<Output = String> + 'static>>>;
+type ResponderFn = Box<dyn Fn(SocketAddr) -> Pin<Box<dyn Future<Output = String> + 'static>>>;
+type Routes = HashMap<Box<str>, ResponderFn>;
 
 pub(crate) struct ServerBuilder<A>
 where
     A: ToSocketAddrs + ToString + 'static,
 {
-    routers: HashMap<Arc<str>, ResponderFn>,
+    routers: Routes,
     addr: A,
 }
 
@@ -34,7 +35,7 @@ where
         callback: fn(addr: SocketAddr) -> R,
     ) -> Self {
         self.routers
-            .insert(route.into(), Arc::new(move |a| Box::pin(callback(a))));
+            .insert(route.into(), Box::new(move |a| Box::pin(callback(a))));
         self
     }
 
@@ -47,23 +48,20 @@ pub(crate) struct Server<A>
 where
     A: ToSocketAddrs + ToString + 'static,
 {
-    routes: HashMap<Arc<str>, ResponderFn>,
-    _addr: A,
+    routes: Routes,
+    addr: A,
 }
 
 impl<A> Server<A>
 where
     A: ToSocketAddrs + ToString + 'static,
 {
-    pub(crate) fn new(addr: A, routes: HashMap<Arc<str>, ResponderFn>) -> Arc<Self> {
-        Arc::new(Self {
-            routes,
-            _addr: addr,
-        })
+    pub(crate) fn new(addr: A, routes: Routes) -> Arc<Self> {
+        Arc::new(Self { routes, addr })
     }
 
     pub(crate) async fn listen(self: Arc<Self>) -> std::io::Result<()> {
-        let tcp_listener = TcpListener::bind(&self._addr).await?;
+        let tcp_listener = TcpListener::bind(&self.addr).await?;
         loop {
             let (stream, addr) = tcp_listener.accept().await.unwrap();
 
